@@ -5,30 +5,56 @@ on:
     branches: ["main"]
   workflow_dispatch:
 
+# Least privilege by default. Jobs elevate only where required.
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: pages
   cancel-in-progress: true
 
 jobs:
-  verify-and-deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+  verify:
+    name: Verify
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
     steps:
       - name: Checkout
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - name: Syntax and security smoke tests
+      - name: Verify required application files
+        shell: bash
         run: |
           set -euo pipefail
+
+          required=(
+            "index.html"
+            "app.js"
+            "crypto.js"
+            "db.js"
+            "validation.js"
+            "styles.css"
+            "manifest.webmanifest"
+            "service-worker.js"
+            "tests/security-smoke.mjs"
+          )
+
+          for file in "${required[@]}"; do
+            if [[ ! -f "$file" ]]; then
+              echo "::error::Required file is missing: $file"
+              exit 1
+            fi
+          done
+
+      - name: Syntax and security smoke tests
+        shell: bash
+        run: |
+          set -euo pipefail
+
           node --check app.js
           node --check crypto.js
           node --check db.js
@@ -36,10 +62,47 @@ jobs:
           node --check service-worker.js
           node tests/security-smoke.mjs
           python3 -m json.tool manifest.webmanifest >/dev/null
-          if git grep -nEi '(github_pat_|ghp_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|BEGIN (RSA|OPENSSH|EC) PRIVATE KEY)' -- ':!README.md'; then
-            echo 'Potential secret material detected.' >&2
+
+      - name: Reject obvious secret material
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Character classes deliberately break the literal secret prefixes in
+          # this workflow file, preventing the scanner from matching itself.
+          pattern='(github_[p]at_|gh[p]_[A-Za-z0-9]{20,}|AKI[A][0-9A-Z]{16}|BEGIN (RS[A]|OPENSSH|E[C]) PRIVATE KEY)'
+
+          if git grep -nEI "$pattern" -- .; then
+            echo "::error::Potential secret material detected in tracked files."
             exit 1
           fi
+
+      - name: Reject private-data and credential file types
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          bad="$(git ls-files | grep -Ei '(^|/)\.env($|\.)|\.pem$|\.key$|\.p12$|\.pfx$|\.glp1$' || true)"
+
+          if [[ -n "$bad" ]]; then
+            echo "::error::Potential credential/private-data files must not be deployed:"
+            printf '%s\n' "$bad"
+            exit 1
+          fi
+
+  package:
+    name: Package Pages artifact
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Configure Pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
@@ -49,6 +112,20 @@ jobs:
         with:
           path: .
 
+  deploy:
+    name: Deploy
+    needs: package
+    runs-on: ubuntu-latest
+
+    permissions:
+      pages: write
+      id-token: write
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
       - name: Deploy
         id: deployment
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
