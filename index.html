@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#101828">
+  <meta name="color-scheme" content="light dark">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; manifest-src 'self'; worker-src 'self'; media-src 'none'; frame-src 'none'">
+  <meta name="description" content="Private, local-first GLP-1 tracking PWA">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" href="./icons/icon-192.png" sizes="192x192">
+  <link rel="apple-touch-icon" href="./icons/icon-192.png">
+  <link rel="stylesheet" href="./styles.css">
+  <title>Private GLP-1 Tracker</title>
+</head>
+<body>
+  <header class="app-header">
+    <div>
+      <p class="eyebrow">LOCAL-FIRST • ENCRYPTED</p>
+      <h1>GLP-1 Tracker</h1>
+    </div>
+    <button id="lockButton" class="secondary hidden" type="button">Lock</button>
+  </header>
+
+  <main id="app" class="shell">
+    <section id="unsupportedView" class="card hidden" aria-live="polite">
+      <h2>Browser support required</h2>
+      <p>This app requires IndexedDB and the Web Crypto API in a secure HTTPS context.</p>
+    </section>
+
+    <section id="setupView" class="card hidden">
+      <h2>Create local encrypted vault</h2>
+      <p>Your health records stay encrypted in this browser profile. The passphrase is never stored.</p>
+      <form id="setupForm" novalidate>
+        <label for="newPassphrase">Passphrase</label>
+        <input id="newPassphrase" name="newPassphrase" type="password" minlength="12" maxlength="256" autocomplete="new-password" required>
+        <p class="hint">Use at least 12 characters. A long unique passphrase is strongly preferred.</p>
+
+        <label for="confirmPassphrase">Confirm passphrase</label>
+        <input id="confirmPassphrase" name="confirmPassphrase" type="password" minlength="12" maxlength="256" autocomplete="new-password" required>
+
+        <button type="submit">Create encrypted vault</button>
+      </form>
+    </section>
+
+    <section id="unlockView" class="card hidden">
+      <h2>Unlock tracker</h2>
+      <form id="unlockForm" novalidate>
+        <label for="passphrase">Passphrase</label>
+        <input id="passphrase" name="passphrase" type="password" maxlength="256" autocomplete="current-password" required>
+        <button type="submit">Unlock</button>
+      </form>
+      <p class="hint">There is no server-side password reset. Keep an encrypted backup and store your passphrase safely.</p>
+    </section>
+
+    <div id="mainView" class="hidden">
+      <section class="status-grid" aria-label="Tracker status">
+        <div class="status-card">
+          <span class="status-label">Vault</span>
+          <strong id="vaultStatus">Unlocked</strong>
+        </div>
+        <div class="status-card">
+          <span class="status-label">Storage</span>
+          <strong id="storageStatus">Checking…</strong>
+        </div>
+        <div class="status-card">
+          <span class="status-label">Records</span>
+          <strong id="recordCount">0</strong>
+        </div>
+      </section>
+
+      <nav class="tabs" aria-label="Tracker sections">
+        <button class="tab active" type="button" data-tab="log" aria-selected="true">Log</button>
+        <button class="tab" type="button" data-tab="history" aria-selected="false">History</button>
+        <button class="tab" type="button" data-tab="backup" aria-selected="false">Backup</button>
+      </nav>
+
+      <section id="tab-log" class="tab-panel">
+        <div class="card">
+          <h2>Add record</h2>
+          <form id="recordForm" novalidate>
+            <label for="recordType">Record type</label>
+            <select id="recordType" name="recordType">
+              <option value="injection">Injection</option>
+              <option value="measurement">Measurement</option>
+              <option value="symptom">Symptom</option>
+            </select>
+
+            <div id="commonFields">
+              <label for="recordDateTime">Date and time</label>
+              <input id="recordDateTime" name="recordDateTime" type="datetime-local" required>
+            </div>
+
+            <div id="injectionFields" class="conditional-fields">
+              <label for="medication">Medication</label>
+              <input id="medication" name="medication" type="text" inputmode="text" maxlength="80" placeholder="e.g., semaglutide">
+
+              <div class="two-column">
+                <div>
+                  <label for="doseMg">Dose (mg)</label>
+                  <input id="doseMg" name="doseMg" type="number" min="0.001" max="100" step="0.001" inputmode="decimal">
+                </div>
+                <div>
+                  <label for="injectionSite">Injection site</label>
+                  <select id="injectionSite" name="injectionSite">
+                    <option value="">Not specified</option>
+                    <option value="abdomen-left">Left abdomen</option>
+                    <option value="abdomen-right">Right abdomen</option>
+                    <option value="thigh-left">Left thigh</option>
+                    <option value="thigh-right">Right thigh</option>
+                    <option value="arm-left">Left upper arm</option>
+                    <option value="arm-right">Right upper arm</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div id="measurementFields" class="conditional-fields hidden">
+              <div class="two-column">
+                <div>
+                  <label for="weightLb">Weight (lb)</label>
+                  <input id="weightLb" name="weightLb" type="number" min="20" max="1500" step="0.1" inputmode="decimal">
+                </div>
+                <div>
+                  <label for="waistIn">Waist (in)</label>
+                  <input id="waistIn" name="waistIn" type="number" min="10" max="120" step="0.1" inputmode="decimal">
+                </div>
+              </div>
+            </div>
+
+            <div id="symptomFields" class="conditional-fields hidden">
+              <label for="symptomName">Symptom</label>
+              <input id="symptomName" name="symptomName" type="text" maxlength="80" placeholder="e.g., nausea">
+
+              <label for="severity">Severity</label>
+              <select id="severity" name="severity">
+                <option value="1">1 — Mild</option>
+                <option value="2">2</option>
+                <option value="3">3 — Moderate</option>
+                <option value="4">4</option>
+                <option value="5">5 — Severe</option>
+              </select>
+            </div>
+
+            <label for="notes">Notes</label>
+            <textarea id="notes" name="notes" maxlength="2000" rows="4" placeholder="Optional"></textarea>
+
+            <button type="submit">Encrypt and save</button>
+          </form>
+        </div>
+
+        <div class="card">
+          <h2>Recent summary</h2>
+          <dl id="summaryList" class="summary-list">
+            <div><dt>Last injection</dt><dd id="lastInjection">—</dd></div>
+            <div><dt>Latest weight</dt><dd id="latestWeight">—</dd></div>
+            <div><dt>Latest symptom</dt><dd id="latestSymptom">—</dd></div>
+          </dl>
+        </div>
+      </section>
+
+      <section id="tab-history" class="tab-panel hidden">
+        <div class="card">
+          <div class="card-heading-row">
+            <h2>History</h2>
+            <select id="historyFilter" aria-label="Filter history">
+              <option value="all">All records</option>
+              <option value="injection">Injections</option>
+              <option value="measurement">Measurements</option>
+              <option value="symptom">Symptoms</option>
+            </select>
+          </div>
+          <div id="historyList" class="history-list" aria-live="polite"></div>
+        </div>
+      </section>
+
+      <section id="tab-backup" class="tab-panel hidden">
+        <div class="card">
+          <h2>Encrypted backup</h2>
+          <p>Export creates a JSON backup containing only encrypted record payloads plus non-secret cryptographic metadata. Save it in iCloud Drive, another trusted storage provider, or an offline archive.</p>
+          <div class="button-row">
+            <button id="exportButton" type="button">Export encrypted backup</button>
+            <label class="file-button" for="importFile">Import encrypted backup</label>
+            <input id="importFile" type="file" accept="application/json,.glp1,.json" class="visually-hidden">
+          </div>
+          <p class="warning">Import replaces the current local vault after validating the backup structure. Export your current vault first if you need to preserve it.</p>
+        </div>
+
+        <div class="card danger-zone">
+          <h2>Danger zone</h2>
+          <p>Deleting the local vault is irreversible unless you have an encrypted backup.</p>
+          <button id="deleteVaultButton" class="danger" type="button">Delete local vault</button>
+        </div>
+      </section>
+    </div>
+
+    <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+  </main>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

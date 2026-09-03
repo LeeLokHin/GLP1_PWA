@@ -1,0 +1,10 @@
+{
+  "name": "private-glp1-tracker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node tests/security-smoke.mjs",
+    "check": "node --check app.js && node --check crypto.js && node --check db.js && node --check validation.js && node --check service-worker.js && npm test"
+  }
+}
